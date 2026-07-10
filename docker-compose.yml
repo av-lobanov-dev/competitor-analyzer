@@ -1,0 +1,95 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: competitor_postgres
+    restart: unless-stopped
+
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB}
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      TZ: ${TIMEZONE}
+
+    volumes:
+      - ./postgres/data:/var/lib/postgresql/data
+      - ./postgres/backups:/backups
+
+    ports:
+      - "5432:5432"
+
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+    networks:
+      - competitor_network
+
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: competitor_n8n
+    restart: unless-stopped
+
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+    environment:
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_PORT: 5432
+      DB_POSTGRESDB_DATABASE: ${POSTGRES_DB}
+      DB_POSTGRESDB_USER: ${POSTGRES_USER}
+      DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD}
+
+      N8N_BASIC_AUTH_ACTIVE: "true"
+      N8N_BASIC_AUTH_USER: ${N8N_BASIC_AUTH_USER}
+      N8N_BASIC_AUTH_PASSWORD: ${N8N_BASIC_AUTH_PASSWORD}
+
+      N8N_HOST: ${N8N_HOST}
+      N8N_PORT: ${N8N_PORT}
+      N8N_PROTOCOL: ${N8N_PROTOCOL}
+      WEBHOOK_URL: ${WEBHOOK_URL}
+
+      N8N_SECURE_COOKIE: ${N8N_SECURE_COOKIE}
+      N8N_ENCRYPTION_KEY: ${N8N_ENCRYPTION_KEY}
+
+      GENERIC_TIMEZONE: ${GENERIC_TIMEZONE}
+      TZ: ${TIMEZONE}
+
+    volumes:
+      - ./n8n/data:/home/node/.n8n
+      - ./n8n/workflows:/workflows
+      - ./data:/data
+      - ./logs/n8n:/logs
+
+    ports:
+      - "5678:5678"
+
+    networks:
+      - competitor_network
+
+  playwright:
+    image: mcr.microsoft.com/playwright:v1.61.1-noble
+    container_name: competitor_playwright
+    restart: "no"
+
+    working_dir: /app
+
+    volumes:
+      - ./playwright/app:/app
+      - ./playwright/storage:/app/storage
+      - ./data:/data
+      - ./logs/playwright:/logs
+      - ./prompts:/prompts
+
+    command: sh -c "npm install && tail -f /dev/null"
+
+    networks:
+      - competitor_network
+
+networks:
+  competitor_network:
+    name: competitor_network
+    driver: bridge

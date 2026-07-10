@@ -1,0 +1,14 @@
+{
+  "name": "competitor-playwright",
+  "version": "1.0.0",
+  "description": "Universal Playwright crawler for competitor analyzer",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "check": "node src/check-site.js",
+    "prepare-gpt": "node src/ai/prepare-request-cli.js"
+  },
+  "dependencies": {
+    "playwright": "^1.61.1"
+  }
+}
