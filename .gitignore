@@ -1,3 +1,4 @@
+cat > .gitignore <<'EOF'
 node_modules/
 .env
 .env.*
@@ -7,3 +8,8 @@ data/
 tmp/
 .cache/
 .DS_Store
+
+postgres/data/
+n8n/data/
+playwright/storage/
+EOF
