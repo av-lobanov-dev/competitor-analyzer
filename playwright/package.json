@@ -1,0 +1,12 @@
+{
+  "name": "competitor-playwright",
+  "version": "1.0.0",
+  "description": "Playwright browser service for competitor analyzer",
+  "main": "src/check-site.js",
+  "scripts": {
+    "check": "node src/check-site.js"
+  },
+  "dependencies": {
+    "playwright": "1.55.0"
+  }
+}
