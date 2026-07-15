@@ -60,17 +60,61 @@ async function takeNextJob() {
   }
 }
 
-async function completeJob(jobId) {
-  await pool.query(
-    `
-      UPDATE scan_jobs
-      SET
-        status = 'completed',
-        finished_at = NOW()
-      WHERE id = $1
-    `,
-    [jobId]
-  );
+async function saveSnapshotAndCompleteJob(job, snapshot) {
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    const result = await client.query(
+      `
+        INSERT INTO page_snapshots (
+          scan_job_id,
+          competitor_site_id,
+          requested_url,
+          final_url,
+          page_title,
+          page_text,
+          page_html,
+          http_status,
+          load_time_ms
+        )
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        RETURNING id
+      `,
+      [
+        job.job_id,
+        job.competitor_site_id,
+        job.url,
+        snapshot.finalUrl,
+        snapshot.title,
+        snapshot.text,
+        snapshot.html,
+        snapshot.httpStatus,
+        snapshot.loadTimeMs,
+      ]
+    );
+
+    await client.query(
+      `
+        UPDATE scan_jobs
+        SET
+          status = 'completed',
+          finished_at = NOW()
+        WHERE id = $1
+      `,
+      [job.job_id]
+    );
+
+    await client.query('COMMIT');
+
+    return result.rows[0].id;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 async function failJob(jobId) {
@@ -98,22 +142,60 @@ async function scanSite(job) {
       headless: true,
     });
 
-    const page = await browser.newPage();
+    const page = await browser.newPage({
+      viewport: {
+        width: 1440,
+        height: 900,
+      },
+    });
 
-    await page.goto(job.url, {
+    const startedAt = Date.now();
+
+    const response = await page.goto(job.url, {
       waitUntil: 'domcontentloaded',
       timeout: 30000,
     });
 
+    const loadTimeMs = Date.now() - startedAt;
+
     const title = await page.title();
+    const finalUrl = page.url();
+    const httpStatus = response ? response.status() : null;
+
+    const pageText = await page
+      .locator('body')
+      .innerText({ timeout: 10000 })
+      .catch(() => '');
+
+    const pageHtml = await page.content();
+
+    const snapshot = {
+      finalUrl,
+      title,
+      text: pageText.slice(0, 500000),
+      html: pageHtml.slice(0, 2000000),
+      httpStatus,
+      loadTimeMs,
+    };
 
     console.log(`Заголовок страницы: ${title}`);
+    console.log(`Конечный URL: ${finalUrl}`);
+    console.log(`HTTP-статус: ${httpStatus}`);
+    console.log(`Время загрузки: ${loadTimeMs} мс`);
+    console.log(`Размер текста: ${snapshot.text.length} символов`);
+    console.log(`Размер HTML: ${snapshot.html.length} символов`);
 
-    await completeJob(job.job_id);
+    const snapshotId = await saveSnapshotAndCompleteJob(job, snapshot);
 
+    console.log(`Снимок страницы сохранён, ID: ${snapshotId}`);
     console.log(`Задание №${job.job_id} завершено успешно`);
   } catch (error) {
-    await failJob(job.job_id);
+    try {
+      await failJob(job.job_id);
+    } catch (databaseError) {
+      console.error('Не удалось изменить статус задания на failed:');
+      console.error(databaseError);
+    }
 
     console.error(`Задание №${job.job_id} завершилось с ошибкой`);
     console.error(error);
