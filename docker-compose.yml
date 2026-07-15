@@ -40,8 +40,16 @@ services:
     container_name: competitor_playwright
     restart: unless-stopped
     working_dir: /app
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_DB: competitor_analyzer
+      POSTGRES_USER: competitor_user
+      POSTGRES_PASSWORD: competitor_password
     volumes:
       - ./playwright:/app
       - /app/node_modules
       - ./data:/data
     command: sleep infinity
+    depends_on:
+      - postgres
