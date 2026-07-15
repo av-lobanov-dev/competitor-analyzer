@@ -97,6 +97,27 @@ async function saveSnapshotAndCompleteJob(job, snapshot) {
       ]
     );
 
+    const snapshotId = result.rows[0].id;
+
+    const analysisJobResult = await client.query(
+      `
+        INSERT INTO analysis_jobs (
+          page_snapshot_id,
+          competitor_site_id,
+          analysis_type,
+          status
+        )
+        VALUES ($1, $2, 'site_structure', 'new')
+        ON CONFLICT (page_snapshot_id, analysis_type)
+        DO NOTHING
+        RETURNING id
+      `,
+      [
+        snapshotId,
+        job.competitor_site_id,
+      ]
+    );
+
     await client.query(
       `
         UPDATE scan_jobs
@@ -110,7 +131,13 @@ async function saveSnapshotAndCompleteJob(job, snapshot) {
 
     await client.query('COMMIT');
 
-    return result.rows[0].id;
+    return {
+      snapshotId,
+      analysisJobId:
+        analysisJobResult.rows.length > 0
+          ? analysisJobResult.rows[0].id
+          : null,
+    };
   } catch (error) {
     await client.query('ROLLBACK');
     throw error;
@@ -358,9 +385,19 @@ async function scanSite(job) {
       `Структура страницы: ${JSON.stringify(snapshot.structure.counts)}`
     );
 
-    const snapshotId = await saveSnapshotAndCompleteJob(job, snapshot);
+    const savedResult = await saveSnapshotAndCompleteJob(job, snapshot);
 
-    console.log(`Снимок страницы сохранён, ID: ${snapshotId}`);
+    console.log(
+      `Снимок страницы сохранён, ID: ${savedResult.snapshotId}`
+    );
+
+    if (savedResult.analysisJobId) {
+      console.log(
+        `Создано задание для GPT, ID: ${savedResult.analysisJobId}`
+      );
+    } else {
+      console.log('Задание для GPT уже существовало');
+    }
     console.log(`Задание №${job.job_id} завершено успешно`);
   } catch (error) {
     try {
