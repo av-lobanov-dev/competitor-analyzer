@@ -77,9 +77,10 @@ async function saveSnapshotAndCompleteJob(job, snapshot) {
           page_text,
           page_html,
           http_status,
-          load_time_ms
+          load_time_ms,
+          page_structure
         )
-        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10::jsonb)
         RETURNING id
       `,
       [
@@ -92,6 +93,7 @@ async function saveSnapshotAndCompleteJob(job, snapshot) {
         snapshot.html,
         snapshot.httpStatus,
         snapshot.loadTimeMs,
+        JSON.stringify(snapshot.structure),
       ]
     );
 
@@ -128,6 +130,172 @@ async function failJob(jobId) {
     `,
     [jobId]
   );
+}
+
+async function extractPageStructure(page) {
+  return page.evaluate(() => {
+    const normalizeText = (value) =>
+      String(value || '')
+        .replace(/\s+/g, ' ')
+        .trim();
+
+    const makeAbsoluteUrl = (value) => {
+      if (!value) {
+        return null;
+      }
+
+      try {
+        return new URL(value, window.location.href).href;
+      } catch {
+        return null;
+      }
+    };
+
+    const headings = Array.from(
+      document.querySelectorAll('h1, h2, h3, h4, h5, h6')
+    )
+      .map((element) => ({
+        level: Number(element.tagName.substring(1)),
+        text: normalizeText(element.innerText),
+      }))
+      .filter((item) => item.text)
+      .slice(0, 200);
+
+    const links = Array.from(document.querySelectorAll('a[href]'))
+      .map((element) => ({
+        text: normalizeText(element.innerText),
+        url: makeAbsoluteUrl(element.getAttribute('href')),
+        title: normalizeText(element.getAttribute('title')),
+      }))
+      .filter((item) => item.url)
+      .slice(0, 1000);
+
+    const buttons = Array.from(
+      document.querySelectorAll(
+        'button, input[type="button"], input[type="submit"], [role="button"]'
+      )
+    )
+      .map((element) => ({
+        text: normalizeText(
+          element.innerText ||
+            element.getAttribute('value') ||
+            element.getAttribute('aria-label') ||
+            element.getAttribute('title')
+        ),
+        type:
+          element.getAttribute('type') ||
+          element.getAttribute('role') ||
+          element.tagName.toLowerCase(),
+        disabled:
+          element.disabled === true ||
+          element.getAttribute('aria-disabled') === 'true',
+      }))
+      .filter((item) => item.text)
+      .slice(0, 500);
+
+    const inputs = Array.from(
+      document.querySelectorAll('input, select, textarea')
+    )
+      .map((element) => {
+        const id = element.getAttribute('id');
+
+        let label = '';
+
+        if (id) {
+          const labelElement = document.querySelector(
+            `label[for="${CSS.escape(id)}"]`
+          );
+
+          if (labelElement) {
+            label = normalizeText(labelElement.innerText);
+          }
+        }
+
+        return {
+          tag: element.tagName.toLowerCase(),
+          type: element.getAttribute('type') || null,
+          name: element.getAttribute('name') || null,
+          placeholder: normalizeText(element.getAttribute('placeholder')),
+          label,
+          ariaLabel: normalizeText(element.getAttribute('aria-label')),
+        };
+      })
+      .slice(0, 500);
+
+    const images = Array.from(document.querySelectorAll('img'))
+      .map((element) => ({
+        src: makeAbsoluteUrl(
+          element.currentSrc || element.getAttribute('src')
+        ),
+        alt: normalizeText(element.getAttribute('alt')),
+        title: normalizeText(element.getAttribute('title')),
+        width: element.naturalWidth || element.width || null,
+        height: element.naturalHeight || element.height || null,
+      }))
+      .filter((item) => item.src)
+      .slice(0, 1000);
+
+    const possibleProductCards = Array.from(
+      document.querySelectorAll(
+        [
+          '[itemtype*="Product"]',
+          '[data-product]',
+          '[data-product-id]',
+          '[class*="product"]',
+          '[class*="Product"]',
+          '[class*="card"]',
+          '[class*="Card"]',
+        ].join(',')
+      )
+    )
+      .map((element) => {
+        const text = normalizeText(element.innerText);
+
+        const priceMatch = text.match(
+          /(?:₽|руб\.?|р\.?|\$|€|£)\s?\d[\d\s.,]*|\d[\d\s.,]*\s?(?:₽|руб\.?|р\.?|\$|€|£)/i
+        );
+
+        const linkElement = element.querySelector('a[href]');
+        const imageElement = element.querySelector('img');
+
+        return {
+          text: text.slice(0, 1000),
+          url: linkElement
+            ? makeAbsoluteUrl(linkElement.getAttribute('href'))
+            : null,
+          image: imageElement
+            ? makeAbsoluteUrl(
+                imageElement.currentSrc || imageElement.getAttribute('src')
+              )
+            : null,
+          priceText: priceMatch ? normalizeText(priceMatch[0]) : null,
+        };
+      })
+      .filter((item) => item.text && (item.url || item.priceText))
+      .slice(0, 500);
+
+    return {
+      page: {
+        title: document.title,
+        url: window.location.href,
+        language: document.documentElement.lang || null,
+      },
+      headings,
+      links,
+      buttons,
+      inputs,
+      images,
+      possibleProductCards,
+      counts: {
+        headings: headings.length,
+        links: links.length,
+        buttons: buttons.length,
+        inputs: inputs.length,
+        images: images.length,
+        possibleProductCards: possibleProductCards.length,
+      },
+    };
+  });
 }
 
 async function scanSite(job) {
@@ -168,6 +336,7 @@ async function scanSite(job) {
       .catch(() => '');
 
     const pageHtml = await page.content();
+    const pageStructure = await extractPageStructure(page);
 
     const snapshot = {
       finalUrl,
@@ -176,6 +345,7 @@ async function scanSite(job) {
       html: pageHtml.slice(0, 2000000),
       httpStatus,
       loadTimeMs,
+      structure: pageStructure,
     };
 
     console.log(`Заголовок страницы: ${title}`);
@@ -184,6 +354,9 @@ async function scanSite(job) {
     console.log(`Время загрузки: ${loadTimeMs} мс`);
     console.log(`Размер текста: ${snapshot.text.length} символов`);
     console.log(`Размер HTML: ${snapshot.html.length} символов`);
+    console.log(
+      `Структура страницы: ${JSON.stringify(snapshot.structure.counts)}`
+    );
 
     const snapshotId = await saveSnapshotAndCompleteJob(job, snapshot);
 
