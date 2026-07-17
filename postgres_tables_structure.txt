@@ -27,8 +27,10 @@ Foreign-key constraints:
 Referenced by:
     TABLE "analysis_jobs" CONSTRAINT "analysis_jobs_competitor_site_id_fkey" FOREIGN KEY (competitor_site_id) REFERENCES competitor_sites(id) ON DELETE CASCADE
     TABLE "page_snapshots" CONSTRAINT "page_snapshots_competitor_site_id_fkey" FOREIGN KEY (competitor_site_id) REFERENCES competitor_sites(id) ON DELETE CASCADE
+    TABLE "product_scan_jobs" CONSTRAINT "product_scan_jobs_competitor_site_id_fkey" FOREIGN KEY (competitor_site_id) REFERENCES competitor_sites(id) ON DELETE CASCADE
     TABLE "products" CONSTRAINT "products_competitor_site_id_fkey" FOREIGN KEY (competitor_site_id) REFERENCES competitor_sites(id)
     TABLE "scan_jobs" CONSTRAINT "scan_jobs_competitor_site_id_fkey" FOREIGN KEY (competitor_site_id) REFERENCES competitor_sites(id)
+    TABLE "scraping_rules" CONSTRAINT "scraping_rules_competitor_site_id_fkey" FOREIGN KEY (competitor_site_id) REFERENCES competitor_sites(id) ON DELETE CASCADE
     TABLE "site_maps" CONSTRAINT "site_maps_competitor_site_id_fkey" FOREIGN KEY (competitor_site_id) REFERENCES competitor_sites(id)
 Access method: heap
 
@@ -1291,6 +1293,40 @@ Referenced by:
     TABLE "test_case_execution" CONSTRAINT "FK_8e4b4774db42f1e6dda3452b2af" FOREIGN KEY ("testRunId") REFERENCES test_run(id) ON DELETE CASCADE
 Access method: heap
 
+===== TABLE: scraping_rules =====
+                                                                            Table "public.scraping_rules"
+            Column            |            Type             | Collation | Nullable |                  Default                   | Storage  | Compression | Stats target | Description 
+------------------------------+-----------------------------+-----------+----------+--------------------------------------------+----------+-------------+--------------+-------------
+ id                           | integer                     |           | not null | nextval('scraping_rules_id_seq'::regclass) | plain    |             |              | 
+ competitor_site_id           | integer                     |           | not null |                                            | plain    |             |              | 
+ name                         | text                        |           | not null | 'Основное правило'::text                   | extended |             |              | 
+ start_url                    | text                        |           | not null |                                            | extended |             |              | 
+ product_card_selector        | text                        |           | not null |                                            | extended |             |              | 
+ product_name_selector        | text                        |           | not null |                                            | extended |             |              | 
+ product_price_selector       | text                        |           | not null |                                            | extended |             |              | 
+ product_url_selector         | text                        |           |          |                                            | extended |             |              | 
+ product_external_id_selector | text                        |           |          |                                            | extended |             |              | 
+ product_old_price_selector   | text                        |           |          |                                            | extended |             |              | 
+ product_currency_selector    | text                        |           |          |                                            | extended |             |              | 
+ next_page_selector           | text                        |           |          |                                            | extended |             |              | 
+ max_pages                    | integer                     |           | not null | 1                                          | plain    |             |              | 
+ currency                     | text                        |           | not null | 'EUR'::text                                | extended |             |              | 
+ is_active                    | boolean                     |           | not null | true                                       | plain    |             |              | 
+ created_at                   | timestamp without time zone |           | not null | now()                                      | plain    |             |              | 
+ updated_at                   | timestamp without time zone |           | not null | now()                                      | plain    |             |              | 
+Indexes:
+    "scraping_rules_pkey" PRIMARY KEY, btree (id)
+    "idx_scraping_rules_competitor_site_id" btree (competitor_site_id)
+    "idx_scraping_rules_is_active" btree (is_active)
+    "idx_scraping_rules_one_active_per_site" UNIQUE, btree (competitor_site_id) WHERE is_active = true
+Check constraints:
+    "scraping_rules_max_pages_check" CHECK (max_pages > 0)
+Foreign-key constraints:
+    "scraping_rules_competitor_site_id_fkey" FOREIGN KEY (competitor_site_id) REFERENCES competitor_sites(id) ON DELETE CASCADE
+Referenced by:
+    TABLE "product_scan_jobs" CONSTRAINT "product_scan_jobs_scraping_rule_id_fkey" FOREIGN KEY (scraping_rule_id) REFERENCES scraping_rules(id) ON DELETE CASCADE
+Access method: heap
+
 ===== TABLE: role_scope =====
                                                  Table "public.role_scope"
   Column   |          Type          | Collation | Nullable | Default | Storage  | Compression | Stats target | Description 
@@ -1718,6 +1754,38 @@ Indexes:
     "IDX_workflow_dependency_publishedVersionId" btree ("publishedVersionId")
 Foreign-key constraints:
     "FK_a4ff2d9b9628ea988fa9e7d0bf8" FOREIGN KEY ("workflowId") REFERENCES workflow_entity(id) ON DELETE CASCADE
+Access method: heap
+
+===== TABLE: product_scan_jobs =====
+                                                                       Table "public.product_scan_jobs"
+       Column       |            Type             | Collation | Nullable |                    Default                    | Storage  | Compression | Stats target | Description 
+--------------------+-----------------------------+-----------+----------+-----------------------------------------------+----------+-------------+--------------+-------------
+ id                 | integer                     |           | not null | nextval('product_scan_jobs_id_seq'::regclass) | plain    |             |              | 
+ scraping_rule_id   | integer                     |           | not null |                                               | plain    |             |              | 
+ competitor_site_id | integer                     |           | not null |                                               | plain    |             |              | 
+ status             | text                        |           | not null | 'new'::text                                   | extended |             |              | 
+ pages_processed    | integer                     |           | not null | 0                                             | plain    |             |              | 
+ products_found     | integer                     |           | not null | 0                                             | plain    |             |              | 
+ products_created   | integer                     |           | not null | 0                                             | plain    |             |              | 
+ products_updated   | integer                     |           | not null | 0                                             | plain    |             |              | 
+ prices_saved       | integer                     |           | not null | 0                                             | plain    |             |              | 
+ products_skipped   | integer                     |           | not null | 0                                             | plain    |             |              | 
+ error_message      | text                        |           |          |                                               | extended |             |              | 
+ created_at         | timestamp without time zone |           | not null | now()                                         | plain    |             |              | 
+ started_at         | timestamp without time zone |           |          |                                               | plain    |             |              | 
+ finished_at        | timestamp without time zone |           |          |                                               | plain    |             |              | 
+Indexes:
+    "product_scan_jobs_pkey" PRIMARY KEY, btree (id)
+    "idx_product_scan_jobs_competitor_site_id" btree (competitor_site_id)
+    "idx_product_scan_jobs_created_at" btree (created_at)
+    "idx_product_scan_jobs_rule_id" btree (scraping_rule_id)
+    "idx_product_scan_jobs_status" btree (status)
+Check constraints:
+    "product_scan_jobs_counters_check" CHECK (pages_processed >= 0 AND products_found >= 0 AND products_created >= 0 AND products_updated >= 0 AND prices_saved >= 0 AND products_skipped >= 0)
+    "product_scan_jobs_status_check" CHECK (status = ANY (ARRAY['new'::text, 'running'::text, 'completed'::text, 'failed'::text]))
+Foreign-key constraints:
+    "product_scan_jobs_competitor_site_id_fkey" FOREIGN KEY (competitor_site_id) REFERENCES competitor_sites(id) ON DELETE CASCADE
+    "product_scan_jobs_scraping_rule_id_fkey" FOREIGN KEY (scraping_rule_id) REFERENCES scraping_rules(id) ON DELETE CASCADE
 Access method: heap
 
 ===== TABLE: dynamic_credential_resolver =====
