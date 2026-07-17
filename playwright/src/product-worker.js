@@ -166,6 +166,7 @@ async function findOrCreateProduct({
 
 async function savePrice({
   productId,
+  productScanJobId,
   price,
   currency,
 }) {
@@ -173,12 +174,18 @@ async function savePrice({
     `
       INSERT INTO price_history (
         product_id,
+        product_scan_job_id,
         price,
         currency
       )
-      VALUES ($1, $2, $3)
+      VALUES ($1, $2, $3, $4)
     `,
-    [productId, price, currency]
+    [
+      productId,
+      productScanJobId,
+      price,
+      currency,
+    ]
   );
 }
 
@@ -407,6 +414,7 @@ async function processJob(job) {
 
         await savePrice({
           productId: productResult.productId,
+          productScanJobId: job.job_id,
           price,
           currency: job.currency,
         });
