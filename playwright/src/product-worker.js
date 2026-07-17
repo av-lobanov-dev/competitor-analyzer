@@ -29,21 +29,81 @@ function parsePrice(priceText) {
   return price;
 }
 
-async function getActiveRule() {
-  const result = await pool.query(`
-    SELECT
-      sr.*,
-      cs.name AS competitor_name,
-      cs.url AS competitor_url
-    FROM scraping_rules sr
-    JOIN competitor_sites cs
-      ON cs.id = sr.competitor_site_id
-    WHERE sr.is_active = TRUE
-    ORDER BY sr.id
-    LIMIT 1
-  `);
+async function takeNextJob() {
+  const client = await pool.connect();
 
-  return result.rows[0] || null;
+  try {
+    await client.query('BEGIN');
+
+    const jobResult = await client.query(`
+      SELECT
+        psj.id AS job_id,
+        psj.scraping_rule_id,
+        psj.competitor_site_id,
+
+        sr.name AS rule_name,
+        sr.start_url,
+        sr.product_card_selector,
+        sr.product_name_selector,
+        sr.product_price_selector,
+        sr.product_url_selector,
+        sr.product_external_id_selector,
+        sr.product_old_price_selector,
+        sr.product_currency_selector,
+        sr.next_page_selector,
+        sr.max_pages,
+        sr.currency,
+
+        cs.name AS competitor_name,
+        cs.url AS competitor_url
+
+      FROM product_scan_jobs psj
+
+      JOIN scraping_rules sr
+        ON sr.id = psj.scraping_rule_id
+
+      JOIN competitor_sites cs
+        ON cs.id = psj.competitor_site_id
+
+      WHERE psj.status = 'new'
+        AND sr.is_active = TRUE
+
+      ORDER BY psj.id
+
+      FOR UPDATE OF psj SKIP LOCKED
+
+      LIMIT 1
+    `);
+
+    if (jobResult.rows.length === 0) {
+      await client.query('COMMIT');
+      return null;
+    }
+
+    const job = jobResult.rows[0];
+
+    await client.query(
+      `
+        UPDATE product_scan_jobs
+        SET
+          status = 'running',
+          started_at = NOW(),
+          finished_at = NULL,
+          error_message = NULL
+        WHERE id = $1
+      `,
+      [job.job_id]
+    );
+
+    await client.query('COMMIT');
+
+    return job;
+  } catch (error) {
+    await client.query('ROLLBACK');
+    throw error;
+  } finally {
+    client.release();
+  }
 }
 
 async function findOrCreateProduct({
@@ -136,33 +196,86 @@ async function extractOptionalText(card, selector) {
   return cleanText(await element.textContent());
 }
 
-async function processRule(rule) {
+async function completeJob(jobId, counters) {
+  await pool.query(
+    `
+      UPDATE product_scan_jobs
+      SET
+        status = 'completed',
+        pages_processed = $2,
+        products_found = $3,
+        products_created = $4,
+        products_updated = $5,
+        prices_saved = $6,
+        products_skipped = $7,
+        error_message = NULL,
+        finished_at = NOW()
+      WHERE id = $1
+    `,
+    [
+      jobId,
+      counters.pagesProcessed,
+      counters.productsFound,
+      counters.productsCreated,
+      counters.productsUpdated,
+      counters.pricesSaved,
+      counters.productsSkipped,
+    ]
+  );
+}
+
+async function failJob(jobId, error) {
+  const errorMessage = String(
+    error && error.stack
+      ? error.stack
+      : error
+  ).slice(0, 10000);
+
+  await pool.query(
+    `
+      UPDATE product_scan_jobs
+      SET
+        status = 'failed',
+        error_message = $2,
+        finished_at = NOW()
+      WHERE id = $1
+    `,
+    [jobId, errorMessage]
+  );
+}
+
+async function processJob(job) {
   const browser = await chromium.launch({
     headless: true,
   });
 
-  let createdProducts = 0;
-  let updatedProducts = 0;
-  let savedPrices = 0;
-  let skippedProducts = 0;
+  const counters = {
+    pagesProcessed: 0,
+    productsFound: 0,
+    productsCreated: 0,
+    productsUpdated: 0,
+    pricesSaved: 0,
+    productsSkipped: 0,
+  };
 
   const processedUrls = new Set();
 
   try {
     const page = await browser.newPage();
 
-    let currentUrl = rule.start_url;
+    let currentUrl = job.start_url;
 
     console.log('');
-    console.log(`Сайт: ${rule.competitor_name}`);
-    console.log(`Правило: ${rule.name}`);
+    console.log(`Задание №${job.job_id}`);
+    console.log(`Сайт: ${job.competitor_name}`);
+    console.log(`Правило: ${job.rule_name}`);
     console.log(`Начальная страница: ${currentUrl}`);
-    console.log(`Максимум страниц: ${rule.max_pages}`);
+    console.log(`Максимум страниц: ${job.max_pages}`);
     console.log('');
 
     for (
       let pageNumber = 1;
-      pageNumber <= rule.max_pages && currentUrl;
+      pageNumber <= job.max_pages && currentUrl;
       pageNumber += 1
     ) {
       console.log(`Открываем страницу №${pageNumber}: ${currentUrl}`);
@@ -172,9 +285,13 @@ async function processRule(rule) {
         timeout: 30000,
       });
 
-      const httpStatus = response ? response.status() : null;
+      const httpStatus = response
+        ? response.status()
+        : null;
 
-      console.log(`HTTP-статус: ${httpStatus ?? 'неизвестен'}`);
+      console.log(
+        `HTTP-статус: ${httpStatus ?? 'неизвестен'}`
+      );
 
       if (httpStatus && httpStatus >= 400) {
         throw new Error(
@@ -182,33 +299,51 @@ async function processRule(rule) {
         );
       }
 
-      await page.waitForSelector(rule.product_card_selector, {
-        timeout: 15000,
-      });
+      await page.waitForSelector(
+        job.product_card_selector,
+        {
+          timeout: 15000,
+        }
+      );
 
-      const cards = page.locator(rule.product_card_selector);
+      counters.pagesProcessed += 1;
+
+      const cards = page.locator(
+        job.product_card_selector
+      );
+
       const cardsCount = await cards.count();
+
+      counters.productsFound += cardsCount;
 
       console.log(`Найдено карточек: ${cardsCount}`);
 
-      for (let index = 0; index < cardsCount; index += 1) {
+      for (
+        let index = 0;
+        index < cardsCount;
+        index += 1
+      ) {
         const card = cards.nth(index);
 
         const nameElement = card
-          .locator(rule.product_name_selector)
+          .locator(job.product_name_selector)
           .first();
 
         const priceElement = card
-          .locator(rule.product_price_selector)
+          .locator(job.product_price_selector)
           .first();
 
-        const urlElement = rule.product_url_selector
-          ? card.locator(rule.product_url_selector).first()
+        const urlElement = job.product_url_selector
+          ? card.locator(job.product_url_selector).first()
           : null;
 
         const name =
-          cleanText(await nameElement.getAttribute('title')) ||
-          cleanText(await nameElement.textContent());
+          cleanText(
+            await nameElement.getAttribute('title')
+          ) ||
+          cleanText(
+            await nameElement.textContent()
+          );
 
         const priceText = cleanText(
           await priceElement.textContent()
@@ -226,11 +361,15 @@ async function processRule(rule) {
 
         const externalId = await extractOptionalText(
           card,
-          rule.product_external_id_selector
+          job.product_external_id_selector
         );
 
-        if (!name || price === null || !productUrl) {
-          skippedProducts += 1;
+        if (
+          !name ||
+          price === null ||
+          !productUrl
+        ) {
+          counters.productsSkipped += 1;
 
           console.log(
             `Пропущена карточка №${index + 1}: недостаточно данных`
@@ -240,86 +379,152 @@ async function processRule(rule) {
         }
 
         if (processedUrls.has(productUrl)) {
-          console.log(`Повторная ссылка пропущена: ${productUrl}`);
+          counters.productsSkipped += 1;
+
+          console.log(
+            `Повторная ссылка пропущена: ${productUrl}`
+          );
+
           continue;
         }
 
         processedUrls.add(productUrl);
 
-        const productResult = await findOrCreateProduct({
-          competitorSiteId: rule.competitor_site_id,
-          externalId,
-          name,
-          url: productUrl,
-        });
+        const productResult =
+          await findOrCreateProduct({
+            competitorSiteId:
+              job.competitor_site_id,
+            externalId,
+            name,
+            url: productUrl,
+          });
 
         if (productResult.created) {
-          createdProducts += 1;
+          counters.productsCreated += 1;
         } else {
-          updatedProducts += 1;
+          counters.productsUpdated += 1;
         }
 
         await savePrice({
           productId: productResult.productId,
           price,
-          currency: rule.currency,
+          currency: job.currency,
         });
 
-        savedPrices += 1;
+        counters.pricesSaved += 1;
 
         console.log(
-          `Сохранён товар: ${name} | ${price.toFixed(2)} ${rule.currency}`
+          `Сохранён товар: ${name} | ${price.toFixed(2)} ${job.currency}`
         );
       }
 
-      if (!rule.next_page_selector) {
-        console.log('Селектор следующей страницы не задан');
+      if (!job.next_page_selector) {
+        console.log(
+          'Селектор следующей страницы не задан'
+        );
         break;
       }
 
       const nextPageElement = page
-        .locator(rule.next_page_selector)
+        .locator(job.next_page_selector)
         .first();
 
       if ((await nextPageElement.count()) === 0) {
-        console.log('Следующая страница не найдена');
+        console.log(
+          'Следующая страница не найдена'
+        );
         break;
       }
 
-      const nextHref = await nextPageElement.getAttribute('href');
+      const nextHref =
+        await nextPageElement.getAttribute('href');
 
       if (!nextHref) {
-        console.log('У ссылки следующей страницы отсутствует href');
+        console.log(
+          'У ссылки следующей страницы отсутствует href'
+        );
         break;
       }
 
-      currentUrl = new URL(nextHref, page.url()).href;
+      currentUrl = new URL(
+        nextHref,
+        page.url()
+      ).href;
 
       console.log('');
     }
+
+    return counters;
   } finally {
     await browser.close();
   }
-
-  console.log('');
-  console.log('Сбор завершён');
-  console.log(`Создано новых товаров: ${createdProducts}`);
-  console.log(`Обновлено существующих товаров: ${updatedProducts}`);
-  console.log(`Записано цен: ${savedPrices}`);
-  console.log(`Пропущено карточек: ${skippedProducts}`);
 }
 
 async function main() {
   console.log('Подключаемся к PostgreSQL...');
 
-  const rule = await getActiveRule();
+  const job = await takeNextJob();
 
-  if (!rule) {
-    console.log('Активные правила сбора не найдены');
+  if (!job) {
+    console.log(
+      'Новых заданий на сбор товаров нет'
+    );
     return;
   }
 
-  await processRule(rule);
+  console.log(
+    `Получено задание №${job.job_id}`
+  );
+
+  try {
+    const counters = await processJob(job);
+
+    await completeJob(
+      job.job_id,
+      counters
+    );
+
+    console.log('');
+    console.log(
+      `Задание №${job.job_id} завершено успешно`
+    );
+
+    console.log(
+      `Обработано страниц: ${counters.pagesProcessed}`
+    );
+
+    console.log(
+      `Найдено карточек: ${counters.productsFound}`
+    );
+
+    console.log(
+      `Создано товаров: ${counters.productsCreated}`
+    );
+
+    console.log(
+      `Обновлено товаров: ${counters.productsUpdated}`
+    );
+
+    console.log(
+      `Записано цен: ${counters.pricesSaved}`
+    );
+
+    console.log(
+      `Пропущено карточек: ${counters.productsSkipped}`
+    );
+  } catch (error) {
+    await failJob(
+      job.job_id,
+      error
+    );
+
+    console.error('');
+    console.error(
+      `Задание №${job.job_id} завершилось с ошибкой`
+    );
+
+    throw error;
+  }
 }
 
 main()
@@ -327,6 +532,7 @@ main()
     console.error('');
     console.error('Ошибка product-worker:');
     console.error(error);
+
     process.exitCode = 1;
   })
   .finally(async () => {
