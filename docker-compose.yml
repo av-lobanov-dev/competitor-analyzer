@@ -47,10 +47,11 @@ services:
       POSTGRES_DB: competitor_analyzer
       POSTGRES_USER: competitor_user
       POSTGRES_PASSWORD: competitor_password
+      WORKER_INTERVAL_SECONDS: 15
     volumes:
       - ./playwright:/app
       - /app/node_modules
       - ./data:/data
-    command: sleep infinity
+    command: ["sh", "src/queue-runner.sh"]
     depends_on:
       - postgres
