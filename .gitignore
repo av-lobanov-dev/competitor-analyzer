@@ -19,3 +19,12 @@ n8n/data/
 # Playwright temporary data
 playwright/storage/
 
+
+# Backups
+backups/
+postgres/backups/
+postgres/backup/
+postgres/dumps/
+postgres/dump/
+*.dump
+*.backup

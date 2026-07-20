@@ -71,3 +71,13 @@
 4. Добавить запись в `changelog.md`.
 5. Создать ADR, если принято важное архитектурное решение.
 6. Зафиксировать документацию в Git отдельным коммитом или вместе с соответствующим изменением кода.
+
+## Playwright
+
+Документация браузерного исполнителя:
+
+- [Обзор Playwright](05-playwright/README.md)
+- [Обработчик очередей](05-playwright/queue-runner.md)
+- [Worker исследования сайтов](05-playwright/site-research-worker.md)
+- [Worker сбора товаров](05-playwright/product-worker.md)
+- [Устаревшая структура](05-playwright/legacy-app.md)
