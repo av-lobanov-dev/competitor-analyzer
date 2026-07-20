@@ -81,3 +81,17 @@
 - [Worker исследования сайтов](05-playwright/site-research-worker.md)
 - [Worker сбора товаров](05-playwright/product-worker.md)
 - [Устаревшая структура](05-playwright/legacy-app.md)
+
+## PostgreSQL
+
+Документация базы данных:
+
+- [Обзор PostgreSQL](04-database/README.md)
+- [Обзор схемы](04-database/schema-overview.md)
+- [Описание таблиц](04-database/tables.md)
+- [Связи таблиц](04-database/relationships.md)
+- [Очереди заданий](04-database/job-queues.md)
+- [Функции PostgreSQL](04-database/functions.md)
+- [Миграции](04-database/migrations.md)
+- [Backup и восстановление](04-database/backup-and-restore.md)
+- [Технический долг](04-database/technical-debt.md)
