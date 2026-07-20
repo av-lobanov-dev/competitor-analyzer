@@ -176,3 +176,22 @@ Swap добавлен для снижения риска аварийного з
 ### Результат
 
 PostgreSQL больше не прослушивает `0.0.0.0:5432` и `[::]:5432` и недоступен напрямую из интернета.
+
+## 2026-07-20 — перенос секретов в `.env`
+
+### Изменено
+
+- пароль PostgreSQL удалён из `docker-compose.yml`;
+- Docker Compose переведён на обязательную переменную `POSTGRES_PASSWORD`;
+- fallback-пароль удалён из `playwright/src/worker.js`;
+- fallback-пароль удалён из `playwright/src/product-worker.js`;
+- создан новый пароль PostgreSQL;
+- пароль роли `competitor_user` изменён;
+- контейнеры PostgreSQL, n8n и Playwright пересозданы;
+- подтверждена успешная аутентификация PostgreSQL;
+- подтверждено отсутствие ошибок подключения n8n и Playwright;
+- создана документация `docs/09-operations/secrets-management.md`.
+
+### Результат
+
+Действующий пароль PostgreSQL хранится в исключённом из Git файле `.env` и не присутствует в Docker Compose или исходном коде Playwright.

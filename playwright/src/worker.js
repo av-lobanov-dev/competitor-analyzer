@@ -6,7 +6,15 @@ const pool = new Pool({
   port: Number(process.env.POSTGRES_PORT || 5432),
   database: process.env.POSTGRES_DB || 'competitor_analyzer',
   user: process.env.POSTGRES_USER || 'competitor_user',
-  password: process.env.POSTGRES_PASSWORD || 'competitor_password',
+  password: (() => {
+    const password = process.env.POSTGRES_PASSWORD;
+
+    if (!password) {
+      throw new Error('POSTGRES_PASSWORD environment variable is required');
+    }
+
+    return password;
+  })(),
 });
 
 async function takeNextJob() {
