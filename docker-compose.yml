@@ -24,9 +24,6 @@ services:
       DB_POSTGRESDB_DATABASE: competitor_analyzer
       DB_POSTGRESDB_USER: competitor_user
       DB_POSTGRESDB_PASSWORD: competitor_password
-      N8N_BASIC_AUTH_ACTIVE: "true"
-      N8N_BASIC_AUTH_USER: admin
-      N8N_BASIC_AUTH_PASSWORD: admin_password
       N8N_SECURE_COOKIE: ${N8N_SECURE_COOKIE}
     volumes:
       - ./n8n/data:/home/node/.n8n
