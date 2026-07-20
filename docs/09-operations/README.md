@@ -6,6 +6,7 @@
 
 - [Чек-лист готовности v0.1](v0.1-readiness-checklist.md)
 - [Память сервера и swap](server-memory.md)
+- [Сетевой доступ к PostgreSQL](postgresql-network-access.md)
 
 ## Текущий приоритет
 
