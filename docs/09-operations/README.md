@@ -23,3 +23,13 @@
 ## Безопасный доступ
 
 - [Безопасный доступ к n8n](n8n-secure-access.md)
+
+## Проверка состояния сервера
+
+- [Healthcheck](healthcheck.md)
+
+Запуск:
+
+```bash
+./scripts/healthcheck.sh
+```
