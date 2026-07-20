@@ -30,3 +30,4 @@ postgres/dump/
 *.backup
 
 .env.save
+!.env.example
