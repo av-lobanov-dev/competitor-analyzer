@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 
+PROJECT_DIR="/opt/competitor-analyzer"
+
 ERRORS=0
 WARNINGS=0
 BACKUP_DIR="/opt/competitor-analyzer/postgres/backups"
@@ -122,7 +124,7 @@ fi
 echo
 echo "===== 9. POSTGRESQL BACKUP ====="
 
-BACKUP_ROOT="$PROJECT_DIR/postgres/backups"
+BACKUP_ROOT="/opt/competitor-analyzer/postgres/backups"
 
 LATEST_BACKUP="$(
     find "$BACKUP_ROOT" \
@@ -191,9 +193,13 @@ echo "Предупреждений: $WARNINGS"
 
 if [ "$ERRORS" -eq 0 ]; then
     echo "Общее состояние: OK"
+    HEALTHCHECK_EXIT_CODE=0
 else
     echo "Общее состояние: FAILED"
+    HEALTHCHECK_EXIT_CODE=1
 fi
 
 echo
 echo "Терминал остаётся открытым."
+
+exit "$HEALTHCHECK_EXIT_CODE"
