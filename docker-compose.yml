@@ -44,7 +44,8 @@ services:
 
   playwright:
     build:
-      context: ./playwright
+      context: .
+      dockerfile: playwright/Dockerfile
     container_name: competitor_playwright
     restart: unless-stopped
     mem_limit: 768m
@@ -62,7 +63,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       WORKER_INTERVAL_SECONDS: 15
     volumes:
-      - ./playwright:/app
+      - .:/app
       - /app/node_modules
       - ./data:/data
     command: ["sh", "src/queue-runner.sh"]

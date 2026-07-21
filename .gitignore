@@ -31,3 +31,4 @@ postgres/dump/
 
 .env.save
 !.env.example
+postgres/data_backup_*/
