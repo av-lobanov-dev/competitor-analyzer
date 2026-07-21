@@ -122,36 +122,63 @@ fi
 echo
 echo "===== 9. POSTGRESQL BACKUP ====="
 
-if [ -d "$BACKUP_DIR" ]; then
-    LATEST_BACKUP=$(find "$BACKUP_DIR" -maxdepth 1 -type f \
+BACKUP_ROOT="$PROJECT_DIR/postgres/backups"
+
+LATEST_BACKUP="$(
+    find "$BACKUP_ROOT" \
+        -type f \
+        -name 'competitor_analyzer*.dump' \
         -printf '%T@ %p\n' 2>/dev/null \
         | sort -nr \
         | head -1 \
-        | cut -d' ' -f2-)
+        | cut -d' ' -f2-
+)"
 
-    if [ -n "$LATEST_BACKUP" ]; then
-        BACKUP_TIME=$(stat -c %Y "$LATEST_BACKUP")
-        CURRENT_TIME=$(date +%s)
-        BACKUP_AGE_HOURS=$(( (CURRENT_TIME - BACKUP_TIME) / 3600 ))
+if [ -z "$LATEST_BACKUP" ]; then
+    echo "ERROR: резервные копии PostgreSQL не найдены."
+    ERRORS=$((ERRORS + 1))
+else
+    BACKUP_TIMESTAMP="$(
+        stat -c '%Y' "$LATEST_BACKUP" 2>/dev/null
+    )"
+
+    CURRENT_TIMESTAMP="$(
+        date +%s
+    )"
+
+    if [ -z "$BACKUP_TIMESTAMP" ]; then
+        echo "ERROR: не удалось определить время резервной копии."
+        ERRORS=$((ERRORS + 1))
+    else
+        BACKUP_AGE_SECONDS=$((CURRENT_TIMESTAMP - BACKUP_TIMESTAMP))
+        BACKUP_AGE_HOURS=$((BACKUP_AGE_SECONDS / 3600))
 
         echo "Последний файл: $LATEST_BACKUP"
-        echo "Возраст: ${BACKUP_AGE_HOURS} ч."
+        echo "Возраст: $BACKUP_AGE_HOURS ч."
 
-        if [ "$BACKUP_AGE_HOURS" -le 26 ]; then
-            check_ok "Резервная копия актуальна."
-        elif [ "$BACKUP_AGE_HOURS" -le 48 ]; then
-            check_warning "Резервная копия старше 26 часов."
+        if [ ! -s "$LATEST_BACKUP" ]; then
+            echo "ERROR: резервная копия пуста."
+            ERRORS=$((ERRORS + 1))
+        elif [ "$BACKUP_AGE_HOURS" -gt 48 ]; then
+            echo "WARNING: резервная копия старше 48 часов."
+            WARNINGS=$((WARNINGS + 1))
         else
-            check_error "Резервная копия старше 48 часов."
+            if docker exec -i competitor_postgres \
+                pg_restore --list \
+                < "$LATEST_BACKUP" \
+                > /dev/null 2>&1; then
+
+                echo "OK: резервная копия актуальна и читается."
+            else
+                echo "ERROR: резервная копия не прошла pg_restore --list."
+                ERRORS=$((ERRORS + 1))
+            fi
         fi
-    else
-        check_error "В каталоге резервных копий нет файлов."
     fi
-else
-    check_error "Каталог резервных копий не найден: $BACKUP_DIR"
 fi
 
 echo
+
 echo "===== 10. GIT STATUS ====="
 git status --short
 
