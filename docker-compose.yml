@@ -3,6 +3,12 @@ services:
     image: postgres:16
     container_name: competitor_postgres
     restart: unless-stopped
+    mem_limit: 256m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     environment:
       POSTGRES_DB: competitor_analyzer
       POSTGRES_USER: competitor_user
@@ -14,6 +20,12 @@ services:
     image: n8nio/n8n:latest
     container_name: competitor_n8n
     restart: unless-stopped
+    mem_limit: 768m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     environment:
       DB_TYPE: postgresdb
       DB_POSTGRESDB_HOST: postgres
@@ -22,6 +34,7 @@ services:
       DB_POSTGRESDB_USER: competitor_user
       DB_POSTGRESDB_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       N8N_SECURE_COOKIE: ${N8N_SECURE_COOKIE}
+      NODE_OPTIONS: "--max-old-space-size=512"
     volumes:
       - ./n8n/data:/home/node/.n8n
     ports:
@@ -34,6 +47,12 @@ services:
       context: ./playwright
     container_name: competitor_playwright
     restart: unless-stopped
+    mem_limit: 768m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     working_dir: /app
     environment:
       POSTGRES_HOST: postgres
