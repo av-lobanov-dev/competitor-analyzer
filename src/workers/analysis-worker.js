@@ -1,7 +1,14 @@
 "use strict";
 
-const { takeNextAnalysisJob } = require("../queue/analysis-queue");
-const { runPollingWorker } = require("./base-worker");
+const {
+    takeNextAnalysisJob,
+    recoverStuckAnalysisJobs
+} = require("../queue/analysis-queue");
+
+const {
+    runPollingWorker
+} = require("./base-worker");
+
 
 function startAnalysisWorker({
     pool,
@@ -11,20 +18,52 @@ function startAnalysisWorker({
     analysisService
 }) {
     return runPollingWorker({
+
         name: "Analysis Worker",
+
         pollIntervalMs,
+
         logger,
+
         signal,
 
-        takeJob() {
-            return takeNextAnalysisJob(pool);
+
+        async beforeCycle() {
+
+            const recovered =
+                await recoverStuckAnalysisJobs(pool);
+
+
+            if (recovered > 0) {
+
+                logger.info(
+                    "Analysis Worker: восстановлены зависшие задачи",
+                    {
+                        recovered
+                    }
+                );
+
+            }
+
         },
 
+
+        takeJob() {
+
+            return takeNextAnalysisJob(pool);
+
+        },
+
+
         async handleJob(job) {
+
             await analysisService.process(job);
+
         }
+
     });
 }
+
 
 module.exports = {
     startAnalysisWorker

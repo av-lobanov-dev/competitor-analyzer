@@ -7,7 +7,6 @@ async function runPollingWorker({
     pollIntervalMs,
     takeJob,
     handleJob,
-    beforeCycle,
     logger,
     signal
 }) {
@@ -15,12 +14,6 @@ async function runPollingWorker({
 
     while (!signal.stopped) {
         try {
-
-            if (beforeCycle) {
-                await beforeCycle();
-            }
-
-
             const job = await takeJob();
 
             if (!job) {
@@ -28,31 +21,23 @@ async function runPollingWorker({
                 continue;
             }
 
-
             logger.info(`${name}: получена задача`, {
                 job
             });
 
-
             await handleJob(job);
-
-
         } catch (error) {
-
             logger.error(`${name}: ошибка цикла`, {
                 message: error.message,
                 stack: error.stack
             });
 
-
             await sleep(pollIntervalMs);
         }
     }
 
-
     logger.info(`${name}: остановлен`);
 }
-
 
 module.exports = {
     runPollingWorker

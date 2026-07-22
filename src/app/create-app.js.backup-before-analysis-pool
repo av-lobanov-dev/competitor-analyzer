@@ -40,7 +40,6 @@ function createApp({ config, logger }) {
 
         if (config.app.enableAnalysisWorker) {
             const analysisService = createAnalysisService({
-                pool,
                 logger
             });
 

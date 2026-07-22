@@ -62,8 +62,21 @@ async function failAnalysisJob(
     return result.rows[0]?.failed === true;
 }
 
+async function recoverStuckAnalysisJobs(pool) {
+    const result = await pool.query(
+        `
+        SELECT public.recover_stuck_analysis_jobs($1)
+        AS recovered
+        `,
+        [30]
+    );
+
+    return result.rows[0]?.recovered || 0;
+}
+
 module.exports = {
     takeNextAnalysisJob,
     completeAnalysisJob,
-    failAnalysisJob
+    failAnalysisJob,
+    recoverStuckAnalysisJobs
 };

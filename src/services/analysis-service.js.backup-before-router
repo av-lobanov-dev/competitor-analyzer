@@ -5,10 +5,55 @@ const {
     failAnalysisJob
 } = require("../queue/analysis-queue");
 
-const {
-    analyze
-} = require("./analysis-router");
+function buildStructureAnalysis(job) {
+    const structure = job.page_structure || {};
 
+    const counts = structure.counts || {};
+
+    const possibleProducts =
+        Number(counts.possibleProductCards || 0);
+
+    const headings =
+        Number(counts.headings || 0);
+
+    const links =
+        Number(counts.links || 0);
+
+    const images =
+        Number(counts.images || 0);
+
+    return {
+        analysis_type: job.analysis_type,
+
+        page: {
+            title: job.page_title,
+            url: job.final_url
+        },
+
+        content: {
+            textLength:
+                typeof job.page_text === "string"
+                    ? job.page_text.length
+                    : 0
+        },
+
+        structure: {
+            headings,
+            links,
+            images,
+            buttons: Number(counts.buttons || 0),
+            possibleProductCards: possibleProducts
+        },
+
+        signals: {
+            hasProducts: possibleProducts > 0,
+            hasCatalogLikeStructure:
+                possibleProducts >= 5,
+            hasRichNavigation:
+                links >= 20
+        }
+    };
+}
 
 function createAnalysisService({
     pool,
@@ -16,30 +61,22 @@ function createAnalysisService({
 }) {
     return {
         async process(job) {
-
-            const modelName =
-                "internal-analysis-router";
-
-            const promptVersion =
-                "v2";
+            const modelName = "internal-structure-analyzer";
+            const promptVersion = "v1";
 
             try {
-
                 logger.info(
                     "Analysis Service: обработка задания",
                     {
                         analysisJobId:
                             job.analysis_job_id,
-
                         type:
                             job.analysis_type
                     }
                 );
 
-
                 const result =
-                    analyze(job);
-
+                    buildStructureAnalysis(job);
 
                 await completeAnalysisJob(
                     pool,
@@ -49,7 +86,6 @@ function createAnalysisService({
                     promptVersion
                 );
 
-
                 logger.info(
                     "Analysis Service: задача завершена",
                     {
@@ -58,9 +94,7 @@ function createAnalysisService({
                     }
                 );
 
-
             } catch (error) {
-
 
                 await failAnalysisJob(
                     pool,
@@ -70,25 +104,21 @@ function createAnalysisService({
                     promptVersion
                 );
 
-
                 logger.error(
                     "Analysis Service: ошибка",
                     {
                         analysisJobId:
                             job.analysis_job_id,
-
                         message:
                             error.message
                     }
                 );
-
 
                 throw error;
             }
         }
     };
 }
-
 
 module.exports = {
     createAnalysisService

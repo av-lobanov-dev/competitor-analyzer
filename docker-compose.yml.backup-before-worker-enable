@@ -62,9 +62,6 @@ services:
       POSTGRES_USER: competitor_user
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
       WORKER_INTERVAL_SECONDS: 15
-      ENABLE_ANALYSIS_WORKER: "true"
-      ENABLE_SCRAPING_WORKER: "false"
-      ENABLE_LEGACY_WORKER: "false"
     volumes:
       - .:/app
       - /app/node_modules
