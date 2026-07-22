@@ -1,111 +1,199 @@
-# Playwright
+# Playwright и Node.js worker
 
 Playwright является браузерным исполнителем проекта Competitor Analyzer.
 
-Он отвечает за:
+Он используется для:
 
-- открытие сайтов конкурентов;
-- выполнение JavaScript на страницах;
-- получение структуры страницы;
-- сбор HTML и текста;
-- поиск товарных карточек;
-- сбор названий, ссылок и цен;
-- обработку пагинации;
-- сохранение результатов в PostgreSQL.
+- открытия сайтов конкурентов;
+- выполнения JavaScript на страницах;
+- получения структуры страниц;
+- сохранения HTML и текста;
+- поиска ссылок и изображений;
+- поиска возможных товарных карточек;
+- подготовки снимков страниц для анализа;
+- сбора товаров после включения соответствующего worker.
 
 ## Актуальная реализация
 
-Рабочий код находится в каталоге:
+Основное Node.js-приложение находится в каталоге:
 
 ```text
-playwright/src/
+src/
 ```
 
 Основные файлы:
 
 ```text
-playwright/src/queue-runner.sh
-playwright/src/worker.js
-playwright/src/product-worker.js
-playwright/src/check-site.js
-playwright/src/check-scraping-rule.js
+src/index.js
+src/workers/base-worker.js
+src/workers/analysis-worker.js
+src/services/analysis-service.js
+src/services/analysis-router.js
+src/queue/analysis-queue.js
+src/analyzers/structure-analyzer.js
+src/analyzers/seo-analyzer.js
 ```
 
-## Автоматический запуск
-
-Docker Compose запускает:
+Контейнер собирается с помощью:
 
 ```text
-sh src/queue-runner.sh
+playwright/Dockerfile
 ```
 
-Скрипт каждые 15 секунд проверяет две очереди:
-
-1. задания исследования сайтов;
-2. задания сбора товаров.
-
-Интервал задаётся переменной окружения:
+Корень проекта подключается внутрь контейнера:
 
 ```text
-WORKER_INTERVAL_SECONDS
+.:/app
 ```
 
-Текущее значение:
+Поэтому актуальный код внутри контейнера находится в:
 
 ```text
-15 секунд
+/app/src/
 ```
 
-## Worker исследования сайтов
+## Текущая конфигурация worker
+
+```text
+ENABLE_ANALYSIS_WORKER=true
+ENABLE_SCRAPING_WORKER=false
+ENABLE_LEGACY_WORKER=false
+```
+
+В текущей конфигурации работает только:
+
+```text
+Analysis Worker
+```
+
+## Analysis Worker
 
 Файл:
 
 ```text
-playwright/src/worker.js
+src/workers/analysis-worker.js
 ```
 
-Назначение:
-
-- получает новое задание из `scan_jobs`;
-- открывает сайт;
-- сохраняет снимок страницы;
-- создаёт задание анализа структуры;
-- завершает исходное задание.
-
-Подробное описание:
-
-- [Исследование сайтов](site-research-worker.md)
-
-## Worker сбора товаров
-
-Файл:
+Worker получает задания из таблицы:
 
 ```text
-playwright/src/product-worker.js
+analysis_jobs
 ```
 
-Назначение:
+Он выполняет:
 
-- получает задание из `product_scan_jobs`;
-- загружает правило парсинга;
-- собирает товары;
-- сохраняет товары и цены;
-- записывает статистику выполнения.
+- восстановление зависших заданий;
+- безопасное получение следующего задания;
+- передачу задания в Analysis Service;
+- сохранение результата;
+- сохранение ошибки;
+- повторный опрос очереди.
 
 Подробное описание:
 
-- [Сбор товаров](product-worker.md)
+- [Обработчик очередей](queue-runner.md)
+
+## Анализ структуры страницы
+
+Для заданий типа:
+
+```text
+site_structure
+```
+
+используется анализатор структуры страницы.
+
+Маршрутизация выполняется через:
+
+```text
+src/services/analysis-router.js
+```
+
+## SEO-анализ страницы
+
+Для заданий типа:
+
+```text
+seo_analysis
+```
+
+используется файл:
+
+```text
+src/analyzers/seo-analyzer.js
+```
+
+Результат SEO-анализа содержит:
+
+```text
+score
+grade
+metrics
+problems
+recommendations
+```
+
+Подтверждённый результат тестирования страницы Books to Scrape:
+
+```text
+score: 100
+grade: good
+links: 94
+images: 20
+headings: 21
+products: 40
+textLength: 2029
+```
+
+Результат сохраняется в:
+
+```text
+analysis_jobs.result_json
+```
+
+## Компактное логирование
+
+Analysis Worker больше не записывает полный объект задания в журнал.
+
+Логируются только:
+
+```text
+analysisJobId
+pageSnapshotId
+competitorSiteId
+analysisType
+pageTitle
+finalUrl
+```
+
+Большие поля не включаются в запись получения задания:
+
+```text
+page_text
+page_structure
+possibleProductCards
+```
 
 ## Устаревшая структура
 
-Каталог:
+В каталоге:
 
 ```text
-playwright/app/
+playwright/src/
 ```
 
-содержит раннюю самостоятельную версию Playwright-приложения.
+сохраняется предыдущая реализация worker, включая:
 
-Она не запускается текущим Docker Compose и не используется актуальными worker.
+```text
+worker.js
+product-worker.js
+queue-runner.sh
+```
 
-До завершения проверки полезных функций каталог не удаляется.
+Её запуск отключён переменной:
+
+```text
+ENABLE_LEGACY_WORKER=false
+```
+
+Старые файлы пока не удаляются. Сначала необходимо проверить, осталась ли в них полезная функциональность, которую нужно перенести в новую архитектуру.

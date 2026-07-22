@@ -55,6 +55,31 @@ function startAnalysisWorker({
         },
 
 
+        summarizeJob(job) {
+
+            return {
+                analysisJobId:
+                    job.analysis_job_id || null,
+
+                pageSnapshotId:
+                    job.page_snapshot_id || null,
+
+                competitorSiteId:
+                    job.competitor_site_id || null,
+
+                analysisType:
+                    job.analysis_type || null,
+
+                pageTitle:
+                    job.page_title || null,
+
+                finalUrl:
+                    job.final_url || null
+            };
+
+        },
+
+
         async handleJob(job) {
 
             await analysisService.process(job);

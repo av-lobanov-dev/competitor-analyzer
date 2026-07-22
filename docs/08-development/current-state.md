@@ -1,6 +1,6 @@
 # Текущее состояние проекта
 
-Дата актуальности: 2026-07-20
+Дата актуальности: 2026-07-22
 
 ## Проект
 
@@ -122,6 +122,55 @@ main
 d0ba256 Update project PostgreSQL structure
 b8c9bd0 Run Playwright queue workers automatically
 aa530f6 Add product scraping rules and job queue
+```
+
+## Analysis Worker и SEO-анализ — 2026-07-22
+
+Подтверждена новая архитектура обработки аналитических заданий.
+
+Текущая конфигурация:
+
+```text
+ENABLE_ANALYSIS_WORKER=true
+ENABLE_SCRAPING_WORKER=false
+ENABLE_LEGACY_WORKER=false
+```
+
+Реализовано и проверено:
+
+- корневое Node.js-приложение работает внутри контейнера Playwright;
+- Analysis Worker получает задания из таблицы `analysis_jobs`;
+- маршрутизатор поддерживает типы `site_structure` и `seo_analysis`;
+- вместо временного placeholder реализован рабочий SEO-анализатор;
+- SEO-анализатор формирует `score`, `grade`, `metrics`, `problems` и `recommendations`;
+- тестовое задание `analysis_jobs.id = 12` завершилось со статусом `completed`;
+- подтверждён результат `score = 100` и `grade = good`;
+- подтверждены 94 ссылки, 20 изображений, 21 заголовок, 40 товарных элементов и 2029 символов текста;
+- реализовано восстановление зависших аналитических заданий;
+- полный объект задания исключён из журнала получения задания;
+- в журнале остаются идентификаторы, тип анализа, заголовок страницы и итоговый URL;
+- поля `page_text`, `page_structure` и `possibleProductCards` не попадают в запись получения задания.
+
+Основные файлы:
+
+```text
+src/workers/base-worker.js
+src/workers/analysis-worker.js
+src/services/analysis-service.js
+src/services/analysis-router.js
+src/queue/analysis-queue.js
+src/analyzers/seo-analyzer.js
+```
+
+Подтверждённая цепочка обработки:
+
+```text
+analysis_jobs
+    -> Analysis Worker
+    -> Analysis Service
+    -> Analysis Router
+    -> SEO Analyzer
+    -> analysis_jobs.result_json
 ```
 
 ## Текущий этап разработки
